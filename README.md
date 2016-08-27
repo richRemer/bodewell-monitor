@@ -1,10 +1,10 @@
 ```js
 var fs = require("fs"),
     monitor = require("bodewell-monitor"),
-    PathMonitor;
+    path_monitor;
 
 // hypothetical file path monitor
-PathMonitor = monitor((opts) => {
+path_monitor = monitor(function(opts) {
     var interval = opts.interval,   // number of seconds between checks
         path = opts.path,           // path to file
         mtime = undefined;
@@ -32,7 +32,7 @@ PathMonitor = monitor((opts) => {
 });
 
 // check /var/lib/data.foo for changes every 30 seconds
-PathMonitor({path: "/var/lib/data.foo", interval: 30})
+path_monitor({path: "/var/lib/data.foo", interval: 30})
     // monitor will emit alert events when file is changed
     .on("alert", mtime => {
         console.log("file updated at:", mtime.toISOString());
