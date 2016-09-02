@@ -1,10 +1,12 @@
+Example
+-------
 ```js
 var fs = require("fs"),
-    monitor = require("bodewell-monitor"),
+    Monitor = require("bodewell-monitor"),
     PathMonitor;
 
 // hypothetical file path monitor
-PathMonitor = monitor((opts) => {
+PathMonitor = Monitor((opts) => {
     var interval = opts.interval,   // number of seconds between checks
         path = opts.path,           // path to file
         mtime = undefined;
@@ -12,20 +14,20 @@ PathMonitor = monitor((opts) => {
     setInterval(() => {
         fs.stat(path, (err, stats) => {
             // when the monitor sees something wrong, it should call its
-            // fail() method; if the monitor is not currently in a failed
-            // state, this will trigger an alert
-            if (err) return this.fail(err);
+            // trigger() method; if the monitor is not currently in a triggered
+            // state, this will emit an event
+            if (err) return this.trigger();
 
-            // when monitor is no longer in a failed state, it should call
-            // its clear() method to exit failed state
-            else this.clear();
+            // when monitor is no longer failing, it should call its ok() method
+            // to exit triggered state
+            else this.ok();
 
             if (!mtime || mtime.getTime() !== stats.mtime.getTime()) {
                 mtime = stats.mtime;
 
-                // monitor can trigger alerts directly using its alert()
-                // method
-                this.alert(mtime);
+                // monitor can also emit one-time incidents directly using its
+                // incident() method
+                this.incident(mtime);
             }
         })
     }, interval * 1000);
@@ -33,10 +35,11 @@ PathMonitor = monitor((opts) => {
 
 // check /var/lib/data.foo for changes every 30 seconds
 PathMonitor({path: "/var/lib/data.foo", interval: 30})
-    // monitor will emit alert events when file is changed
-    .on("alert", mtime => {
+    // monitor will emit incident events when file is changed
+    .on("incident", mtime => {
         console.log("file updated at:", mtime.toISOString());
 
         // ... do whatever needs to be done when file is updated
     });
 ```
+
