@@ -1,47 +1,63 @@
 var EventEmitter = require("events").EventEmitter,
-    Datum = require("bodewell-datum");
+    Datum = require("bodewell-datum"),
+    keyed = require("bodewell-keyed"),
+    Monitor;
 
 /**
- * System monitor object.
- * @constructor
+ * Define a new monitor or monitor type.
+ * @param {string} key
+ * @param {object} opts
  */
-function Monitor() {
-    if (!(this instanceof Monitor)) {
-        return new Monitor();
+Monitor = keyed(function(opts) {
+    if (!this[Monitor.constructed]) {
+        this[Monitor.constructed] = true;
+        EventEmitter.call(this);
+        this.data = [];
     }
-
-    EventEmitter.call(this);
-
-    this.data = [];
-}
+}, EventEmitter.prototype);
 
 Monitor.unknown = Symbol("unknown");
 Monitor.triggered = Symbol("triggered");
 Monitor.ok = Symbol("ok");
+Monitor.constructed = Symbol("constructed");
 
 /**
  * Create a new Monitor type.
- * @param {function} init
+ * @param {function} config
  * @returns {function}
  */
-Monitor.type = function(init) {
-    function MonitorType(opts) {
-        if (!(this instanceof MonitorType)) {
-            return new MonitorType(opts);
+Monitor.type = function(config) {
+    function MonitorType(key, opts) {
+        var monitor;
+
+        if (Monitor.loaded(key)) {
+            monitor = Monitor(key);
+            if (!monitor[MonitorType.implementation]) {
+                throw new Error("cannot change monitor type");
+            }
+            Monitor.call(monitor, key, opts);
+            monitor[MonitorType.implementation](opts);
+        } else {
+            Monitor.assign(key, Object.create(MonitorType.prototype));
+            Monitor(key, opts);
+            Monitor(key)[MonitorType.implementation](opts);
         }
 
-        Monitor.call(this);
-        init.call(this, opts);
+        return Monitor(key);
     }
+
+    MonitorType.implementation = Symbol("implementation");
 
     MonitorType.prototype = Object.create(Monitor.prototype);
     MonitorType.prototype.constructor = MonitorType;
+    MonitorType.prototype[MonitorType.implementation] = config;
 
     return MonitorType;
 };
 
 Monitor.prototype = Object.create(EventEmitter.prototype);
 Monitor.prototype.constructor = Monitor;
+Monitor.prototype[Monitor.constructed] = false;
 
 /**
  * @name Monitor#state
@@ -56,6 +72,13 @@ Monitor.prototype.state = Monitor.unknown;
  * @readonly
  */
 Monitor.prototype.data = null;
+
+/**
+ * Configure the monitor.
+ */
+Monitor.prototype.configure = function() {
+    // base implementation does nothing
+};
 
 /**
  * Record data point.

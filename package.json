@@ -22,6 +22,7 @@
     "sinon": "^1.17.5"
   },
   "dependencies": {
-    "bodewell-datum": "^1.0.0"
+    "bodewell-datum": "^1.0.0",
+    "bodewell-keyed": "0.0.4"
   }
 }
