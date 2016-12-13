@@ -1,3 +1,4 @@
+const Resource = require("bodewell-resource");
 const assign = Object.assign;
 
 const service$priv = Symbol("Monitor.service");
@@ -13,10 +14,9 @@ const samples$priv = Symbol("Monitor.samples");
  * @constructor
  * @param {Service} service
  */
-function Monitor(service, resource) {
+function Monitor(service) {
     this[service$priv] = service;
     this[samples$priv] = [];
-    this.configure({resource: resource});
 }
 
 Monitor.prototype[service$priv] = null;
@@ -31,9 +31,12 @@ Monitor.prototype[samples$priv] = null;
  * Start monitoring the resource.
  */
 Monitor.prototype.start = function() {
+    var delay;
+
     if (!this[loop$priv]) {
-        this[loop$priv] = setInterval(() => this.sample(false), this.interval);
-        this.service.info(`monitor started ${this.description}`);
+        delay = this.interval * 1000;
+        this[loop$priv] = setInterval(() => this.sample(false), delay);
+        this.service.info(`started '${this.description}'`, this);
     }
 };
 
@@ -50,27 +53,36 @@ Monitor.prototype.stop = function() {
 /**
  * Configure monitor.  Unspecified options will be reset to default.
  * @param {object} opts
- * @param {string} resource
- * @param {number} [threshold]
- * @param {number} [interval]
- * @param {string} [description]
+ * @param {string} opts.resource
+ * @param {number} [opts.threshold]
+ * @param {number} [opts.interval]
+ * @param {string} [opts.description]
  */
 Monitor.prototype.configure = function(opts) {
+    var interval = this.interval;
+
     this[resource$priv] = opts.resource;
     this[threshold$priv] = opts.threshold || 1;
     this[interval$priv] = opts.interval || 60;
     this[description$priv] = opts.description || "";
+
+    if (this[loop$priv]) {
+        this.stop();
+        this.start();
+    }
 };
 
 /**
- * Take a sample immediately.  Optionally re-sync the sampler loop.
+ * Take a sample immediately.  Sampler loop is re-synced unless sync is false.
  * @param {boolean} [sync=true]
  */
 Monitor.prototype.sample = function(sync) {
-    if (arguments.length === 0) sync = true;
+    sync = sync !== false;
 
     var res = this.service.resource(this.resource),
         sample;
+
+    this.service.info("sampling", this);
 
     if (res instanceof Resource) {
         sample = assign({}, res);
@@ -84,10 +96,12 @@ Monitor.prototype.sample = function(sync) {
 
     this[samples$priv].push([new Date(), sample]);
 
-    if (isNaN(Number(sample) || Number(sample) < this.threshold) {
-        this.fail(sample);
+    this.service.info(sample, this);
+
+    if (isNaN(Number(sample)) || Number(sample) < this.threshold) {
+        this.trigger();
     } else {
-        this.success(sample);
+        this.clear();
     }
 
     // re-sync sampler if started
@@ -95,6 +109,20 @@ Monitor.prototype.sample = function(sync) {
         this.stop();
         this.start();
     }
+};
+
+/**
+ * Trigger failure.
+ */
+Monitor.prototype.trigger = function() {
+    this.service.trigger(this);
+};
+
+/**
+ * Clear failure.
+ */
+Monitor.prototype.clear = function() {
+    this.service.clear(this);
 };
 
 Object.defineProperties(Monitor.prototype, {
@@ -119,7 +147,7 @@ Object.defineProperties(Monitor.prototype, {
     resource: {
         configurable: true,
         enumerable: true,
-        get: function() {return this[resouce$priv];}
+        get: function() {return this[resource$priv];}
     },
 
     /**
