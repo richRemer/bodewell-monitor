@@ -1,129 +1,162 @@
-var EventEmitter = require("events").EventEmitter,
-    Datum = require("bodewell-datum"),
-    keyed = require("bodewell-keyed"),
-    Monitor;
+const assign = Object.assign;
+
+const service$priv = Symbol("Monitor.service");
+const resource$priv = Symbol("Monitor.resource");
+const threshold$priv = Symbol("Monitor.threshold");
+const interval$priv = Symbol("Monitor.interval");
+const description$priv = Symbol("Monitor.description");
+const loop$priv = Symbol("Monitor.loop");
+const samples$priv = Symbol("Monitor.samples");
 
 /**
- * Define a new monitor or monitor type.
- * @param {string} key
+ * Bodewell system monitor object.
+ * @constructor
+ * @param {Service} service
+ */
+function Monitor(service, resource) {
+    this[service$priv] = service;
+    this[samples$priv] = [];
+    this.configure({resource: resource});
+}
+
+Monitor.prototype[service$priv] = null;
+Monitor.prototype[resource$priv] = null;
+Monitor.prototype[threshold$priv] = 1
+Monitor.prototype[interval$priv] = 60;
+Monitor.prototype[description$priv] = "";
+Monitor.prototype[loop$priv] = null;
+Monitor.prototype[samples$priv] = null;
+
+/**
+ * Start monitoring the resource.
+ */
+Monitor.prototype.start = function() {
+    if (!this[loop$priv]) {
+        this[loop$priv] = setInterval(() => this.sample(false), this.interval);
+        this.service.info(`monitor started ${this.description}`);
+    }
+};
+
+/**
+ * Stop monitoring the resource.
+ */
+Monitor.prototype.stop = function() {
+    if (this[loop$priv]) {
+        clearInterval(this[loop$priv]);
+        this[loop$priv] = null;
+    }
+};
+
+/**
+ * Configure monitor.  Unspecified options will be reset to default.
  * @param {object} opts
+ * @param {string} resource
+ * @param {number} [threshold]
+ * @param {number} [interval]
+ * @param {string} [description]
  */
-Monitor = keyed(function(opts) {
-    if (!this[Monitor.constructed]) {
-        this[Monitor.constructed] = true;
-        EventEmitter.call(this);
-        this.data = [];
-    }
-}, EventEmitter.prototype);
-
-Monitor.unknown = Symbol("unknown");
-Monitor.triggered = Symbol("triggered");
-Monitor.ok = Symbol("ok");
-Monitor.constructed = Symbol("constructed");
+Monitor.prototype.configure = function(opts) {
+    this[resource$priv] = opts.resource;
+    this[threshold$priv] = opts.threshold || 1;
+    this[interval$priv] = opts.interval || 60;
+    this[description$priv] = opts.description || "";
+};
 
 /**
- * Create a new Monitor type.
- * @param {function} config
- * @returns {function}
+ * Take a sample immediately.  Optionally re-sync the sampler loop.
+ * @param {boolean} [sync=true]
  */
-Monitor.type = function(config) {
-    function MonitorType(key, opts) {
-        var monitor;
+Monitor.prototype.sample = function(sync) {
+    if (arguments.length === 0) sync = true;
 
-        if (Monitor.loaded(key)) {
-            monitor = Monitor(key);
-            if (!monitor[MonitorType.implementation]) {
-                throw new Error("cannot change monitor type");
-            }
-            Monitor.call(monitor, key, opts);
-            monitor[MonitorType.implementation](opts);
-        } else {
-            Monitor.assign(key, Object.create(MonitorType.prototype));
-            Monitor(key, opts);
-            Monitor(key)[MonitorType.implementation](opts);
-        }
+    var res = this.service.resource(this.resource),
+        sample;
 
-        return Monitor(key);
+    if (res instanceof Resource) {
+        sample = assign({}, res);
+        sample.value = Number(res);
+        sample.valueOf = function() {return this.value;}
+    } else if (typeof res === "boolean") {
+        sample = Number(res);
+    } else {
+        sample = undefined;
     }
 
-    MonitorType.implementation = Symbol("implementation");
+    this[samples$priv].push([new Date(), sample]);
 
-    MonitorType.prototype = Object.create(Monitor.prototype);
-    MonitorType.prototype.constructor = MonitorType;
-    MonitorType.prototype[MonitorType.implementation] = config;
+    if (isNaN(Number(sample) || Number(sample) < this.threshold) {
+        this.fail(sample);
+    } else {
+        this.success(sample);
+    }
 
-    return MonitorType;
+    // re-sync sampler if started
+    if (this[loop$priv] && sync) {
+        this.stop();
+        this.start();
+    }
 };
 
-Monitor.prototype = Object.create(EventEmitter.prototype);
-Monitor.prototype.constructor = Monitor;
-Monitor.prototype[Monitor.constructed] = false;
+Object.defineProperties(Monitor.prototype, {
+    /**
+     * Bodewell service to which monitor reports.
+     * @name Monitor#service
+     * @type {Service}
+     * @readonly
+     */
+    service: {
+        configurable: true,
+        enumerable: true,
+        get: function() {return this[service$priv];}
+    },
 
-/**
- * @name Monitor#state
- * @type {Symbol}
- * @readonly
- */
-Monitor.prototype.state = Monitor.unknown;
+    /**
+     * Resource path to monitor.
+     * @name Monitor#resource
+     * @type {string}
+     * @readonly
+     */
+    resource: {
+        configurable: true,
+        enumerable: true,
+        get: function() {return this[resouce$priv];}
+    },
 
-/**
- * @name Monitor#data
- * @type {Datum[]}
- * @readonly
- */
-Monitor.prototype.data = null;
+    /**
+     * Threshold for successful monitor.
+     * @name Monitor#threshold
+     * @type {number}
+     * @readonly
+     */
+    threshold: {
+        configurable: true,
+        enumerable: true,
+        get: function() {return this[threshold$priv];}
+    },
 
-/**
- * Configure the monitor.
- */
-Monitor.prototype.configure = function() {
-    // base implementation does nothing
-};
+    /**
+     * Interval between resource checks.
+     * @name Monitor#interval
+     * @type {number}
+     * @readonly
+     */
+    interval: {
+        configurable: true,
+        enumerable: true,
+        get: function() {return this[interval$priv];}
+    },
 
-/**
- * Record data point.
- * @param {number|Datum} value
- */
-Monitor.prototype.record = function(value) {
-    var datum = value instanceof Datum
-        ? value
-        : Datum(new Date(), value);
-
-    this.data.push(datum);
-    this.emit("data", datum);
-};
-
-/**
- * Erase all recorded data.
- */
-Monitor.prototype.erase = function() {
-    this.data.splice(0);
-};
-
-/**
- * Trigger the monitor.
- */
-Monitor.prototype.trigger = function() {
-    var emit = this.state === Monitor.ok;
-    this.state = Monitor.triggered;
-    if (emit) this.emit("triggered")
-};
-
-/**
- * Reset triggered monitor.
- */
-Monitor.prototype.ok = function() {
-    var emit = this.state === Monitor.triggered;
-    this.state = Monitor.ok;
-    if (emit) this.emit("ok");
-};
-
-/**
- * Report an incident.
- * @param {*} incident
- */
-Monitor.prototype.incident = function(incident) {
-    this.emit("incident", incident);
-};
+    /**
+     * Monitor description.
+     * @name Monitor#description
+     * @type {string}
+     * @readonly
+     */
+    description: {
+        configurable: true,
+        enumerable: true,
+        get: function() {return this[description$priv];}
+    }
+});
 
 module.exports = Monitor;

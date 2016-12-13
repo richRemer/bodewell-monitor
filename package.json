@@ -1,7 +1,7 @@
 {
   "name": "bodewell-monitor",
-  "version": "0.0.1",
-  "description": "bodewell monitor plugin",
+  "version": "0.0.2",
+  "description": "Bodewell system monitor",
   "main": "monitor.js",
   "scripts": {
     "test": "mocha"
@@ -10,19 +10,10 @@
     "type": "git",
     "url": "git+ssh://git@github.com/richRemer/bodewell-monitor.git"
   },
-  "author": "Richard Remer (reanjr@gmail.com)",
+  "author": "Richard Remer <reanjr@gmail.com>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/richRemer/bodewell-monitor/issues"
   },
-  "homepage": "https://github.com/richRemer/bodewell-monitor#readme",
-  "devDependencies": {
-    "expect.js": "^0.3.1",
-    "mocha": "^3.0.2",
-    "sinon": "^1.17.5"
-  },
-  "dependencies": {
-    "bodewell-datum": "^1.0.0",
-    "bodewell-keyed": "0.0.4"
-  }
+  "homepage": "https://github.com/richRemer/bodewell-monitor#readme"
 }
