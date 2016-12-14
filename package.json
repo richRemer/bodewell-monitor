@@ -1,6 +1,6 @@
 {
   "name": "bodewell-monitor",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Bodewell system monitor",
   "main": "monitor.js",
   "scripts": {
@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/richRemer/bodewell-monitor#readme",
   "dependencies": {
+    "bodewell-loop": "0.0.1",
     "bodewell-resource": "0.0.1"
   }
 }

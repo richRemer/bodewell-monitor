@@ -1,13 +1,14 @@
 const Resource = require("bodewell-resource");
+const Loop = require("bodewell-loop");
 const assign = Object.assign;
 
 const service$priv = Symbol("Monitor.service");
 const resource$priv = Symbol("Monitor.resource");
 const threshold$priv = Symbol("Monitor.threshold");
-const interval$priv = Symbol("Monitor.interval");
 const description$priv = Symbol("Monitor.description");
 const loop$priv = Symbol("Monitor.loop");
 const samples$priv = Symbol("Monitor.samples");
+const triggered$priv = Symbol("Monitor.triggered");
 
 /**
  * Bodewell system monitor object.
@@ -17,26 +18,24 @@ const samples$priv = Symbol("Monitor.samples");
 function Monitor(service) {
     this[service$priv] = service;
     this[samples$priv] = [];
+    this[loop$priv] = new Loop(() => this.sample());
 }
 
 Monitor.prototype[service$priv] = null;
 Monitor.prototype[resource$priv] = null;
 Monitor.prototype[threshold$priv] = 1
-Monitor.prototype[interval$priv] = 60;
 Monitor.prototype[description$priv] = "";
 Monitor.prototype[loop$priv] = null;
 Monitor.prototype[samples$priv] = null;
+Monitor.prototype[triggered$priv] = false;
 
 /**
  * Start monitoring the resource.
  */
 Monitor.prototype.start = function() {
-    var delay;
-
-    if (!this[loop$priv]) {
-        delay = this.interval * 1000;
-        this[loop$priv] = setInterval(() => this.sample(false), delay);
-        this.service.info(`started '${this.description}'`, this);
+    if (!this[loop$priv].started) {
+        this[loop$priv].start();
+        this.service.trace("started monitor", this);
     }
 };
 
@@ -44,9 +43,9 @@ Monitor.prototype.start = function() {
  * Stop monitoring the resource.
  */
 Monitor.prototype.stop = function() {
-    if (this[loop$priv]) {
-        clearInterval(this[loop$priv]);
-        this[loop$priv] = null;
+    if (this[loop$priv].started) {
+        this[loop$priv].stop();
+        this.service.trace("stopped monitor", this);
     }
 };
 
@@ -59,70 +58,56 @@ Monitor.prototype.stop = function() {
  * @param {string} [opts.description]
  */
 Monitor.prototype.configure = function(opts) {
-    var interval = this.interval;
+    var interval = (opts.interval || 60) * 1000;
 
     this[resource$priv] = opts.resource;
     this[threshold$priv] = opts.threshold || 1;
-    this[interval$priv] = opts.interval || 60;
     this[description$priv] = opts.description || "";
 
-    if (this[loop$priv]) {
-        this.stop();
-        this.start();
+    if (interval !== this[loop$priv].interval) {
+        this[loop$priv].changeInterval(interval);
+    } else if (this[loop$priv].started) {
+        this[loop$priv].now();
     }
 };
 
 /**
- * Take a sample immediately.  Sampler loop is re-synced unless sync is false.
- * @param {boolean} [sync=true]
+ * Take a sample.
  */
 Monitor.prototype.sample = function(sync) {
-    sync = sync !== false;
-
-    var res = this.service.resource(this.resource),
-        sample;
-
-    this.service.info("sampling", this);
-
-    if (res instanceof Resource) {
-        sample = assign({}, res);
-        sample.value = Number(res);
-        sample.valueOf = function() {return this.value;}
-    } else if (typeof res === "boolean") {
+    var res = this.service.resource(this.resource);
         sample = Number(res);
-    } else {
-        sample = undefined;
-    }
 
     this[samples$priv].push([new Date(), sample]);
+    this.service.trace("sampled", this);
 
-    this.service.info(sample, this);
-
-    if (isNaN(Number(sample)) || Number(sample) < this.threshold) {
+    if (isNaN(sample) || sample < this.threshold) {
         this.trigger();
     } else {
-        this.clear();
-    }
-
-    // re-sync sampler if started
-    if (this[loop$priv] && sync) {
-        this.stop();
-        this.start();
+        this.release();
     }
 };
 
 /**
- * Trigger failure.
+ * Engage triggered.
  */
 Monitor.prototype.trigger = function() {
-    this.service.trigger(this);
+    if (!this.triggered) {
+        this.service.trace("triggering", this);
+        this[triggered$priv] = true;
+        this.service.trigger(this);
+    }
 };
 
 /**
- * Clear failure.
+ * Release triggered state.
  */
-Monitor.prototype.clear = function() {
-    this.service.clear(this);
+Monitor.prototype.release = function() {
+    if (this.triggered) {
+        this.service.trace("releasing", this);
+        this[triggered$priv] = false;
+        this.service.release(this);
+    }
 };
 
 Object.defineProperties(Monitor.prototype, {
@@ -163,7 +148,7 @@ Object.defineProperties(Monitor.prototype, {
     },
 
     /**
-     * Interval between resource checks.
+     * Seconds between resource checks.
      * @name Monitor#interval
      * @type {number}
      * @readonly
@@ -171,7 +156,7 @@ Object.defineProperties(Monitor.prototype, {
     interval: {
         configurable: true,
         enumerable: true,
-        get: function() {return this[interval$priv];}
+        get: function() {return this[loop$priv].interval / 1000;}
     },
 
     /**
@@ -184,6 +169,18 @@ Object.defineProperties(Monitor.prototype, {
         configurable: true,
         enumerable: true,
         get: function() {return this[description$priv];}
+    },
+
+    /**
+     * True when monitor has been triggered.
+     * @name Monitor#triggered
+     * @type {boolean}
+     * @readonly
+     */
+    triggered: {
+        configurable: true,
+        enumerable: true,
+        get: function() {return this[triggered$priv];}
     }
 });
 
